@@ -241,6 +241,11 @@ struct xrdp_client_info
 
     int pad1; /* unused; unicode_input_state */
     enum xrdp_capture_code capture_code;
+
+    /* xorgxrdp: frame capture interval (milliseconds) */
+    int rfx_frame_interval;
+    int h264_frame_interval;
+    int normal_frame_interval;
 };
 
 enum xrdp_encoder_flags
@@ -260,6 +265,6 @@ enum xrdp_encoder_flags
 
 /* yyyymmdd of last incompatible change to xrdp_client_info */
 /* also used for changes to all the xrdp installed headers */
-#define CLIENT_INFO_CURRENT_VERSION 20240514
+#define CLIENT_INFO_CURRENT_VERSION 20241118
 
 #endif
