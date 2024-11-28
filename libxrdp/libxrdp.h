@@ -145,6 +145,7 @@ struct xrdp_drdynvc
     int (*close_response)(intptr_t id, int chan_id);
     int (*data_first)(intptr_t id, int chan_id, char *data, int bytes, int total_bytes);
     int (*data)(intptr_t id, int chan_id, char *data, int bytes);
+    char name[100]; /* only for test, REMOVE!! */
 };
 
 /* channel */

@@ -85,6 +85,14 @@ static char *g_override_window_title = 0;
 #define RWD_HEIGHT  (1 << 3)
 #define RWD_TITLE   (1 << 4)
 
+/* Flags for setting up RAIL session parameters */
+#define TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_HIDEF                    (1 << 0)
+#define TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_EXTENDED_SPI_SUPPORTED   (1 << 1)
+#define TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_SNAP_ARRANGE_SUPPORTED   (1 << 2)
+#define TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_TEXT_SCALE_SUPPORTED     (1 << 3)
+#define TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_CARET_BLINK_SUPPORTED    (1 << 4)
+#define TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_EXTENDED_SPI_2_SUPPORTED (1 << 5)
+
 struct rail_window_data
 {
     int valid; /* bits for which fields are valid */
@@ -105,7 +113,7 @@ struct rail_window_data
 #define TS_RAIL_ORDER_SYSPARAM 0x0003
 /* Indicates a Client System Command PDU from client to server. */
 #define TS_RAIL_ORDER_SYSCOMMAND 0x0004
-/* Indicates a bi-directional Handshake PDU. */
+/* Indicates a bi-directional Handshake PDU. client->server */
 #define TS_RAIL_ORDER_HANDSHAKE 0x0005
 /* Indicates a Client Notify Event PDU from client to server. */
 #define TS_RAIL_ORDER_NOTIFY_EVENT 0x0006
@@ -130,6 +138,8 @@ struct rail_window_data
 /* Indicates a Server Get Application ID Response PDU from
    server to client. */
 #define TS_RAIL_ORDER_GET_APPID_RESP 0x000F
+/* Indicates a bi-directional Handshake PDU. server->client */
+#define TS_RAIL_ORDER_HANDSHAKE_EX 0x0013
 
 /* Resize the window. */
 #define SC_SIZE 0xF000
@@ -287,15 +297,23 @@ rail_send_init(void)
     LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_send_init:");
     make_stream(s);
     init_stream(s, 8182);
-    out_uint16_le(s, TS_RAIL_ORDER_HANDSHAKE);
+    // header (4 bytes)
+    out_uint16_le(s, TS_RAIL_ORDER_HANDSHAKE_EX);
+    // out_uint16_le(s, TS_RAIL_ORDER_HANDSHAKE);
     size_ptr = s->p;
     out_uint16_le(s, 0);        /* size, set later */
+    // buildNumber (4 bytes)
     out_uint32_le(s, 1);        /* build number */
+    // railHandshakeFlags (4 bytes)
+    out_uint32_le(s, // TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_HIDEF |
+                    TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_EXTENDED_SPI_SUPPORTED |
+                    TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_SNAP_ARRANGE_SUPPORTED |
+                    TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_TEXT_SCALE_SUPPORTED |
+                    TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_CARET_BLINK_SUPPORTED);
     s_mark_end(s);
-    bytes = (int)((s->end - s->data) - 4);
+    bytes = (int)(s->end - s->data);
     size_ptr[0] = bytes;
     size_ptr[1] = bytes >> 8;
-    bytes = (int)(s->end - s->data);
     send_channel_data(g_rail_chan_id, s->data, bytes);
     free_stream(s);
     return 0;
@@ -340,6 +358,10 @@ rail_init(void)
 {
     LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_init:");
     xcommon_init();
+    
+    /* When the client has requested a RAIL session, [MS-RDPERP] 1.3.2.1 states 
+    that the server must send the TS_RAIL_ORDER_HANDSHAKE PDU */
+    rail_send_init();
 
     return 0;
 }
@@ -376,7 +398,6 @@ rail_startup(void)
 
     list_delete(g_window_list);
     g_window_list = list_create();
-    rail_send_init();
     g_rail_up = 1;
     g_rwd_atom = XInternAtom(g_display, "XRDP_RAIL_WINDOW_DATA", 0);
 
@@ -1430,6 +1451,7 @@ rail_create_window(Window window_id, Window owner_id)
 
     make_stream(s);
     init_stream(s, title_size + 1024 + num_window_rects * 8 + num_visibility_rects * 8);
+    LOG_DEVEL(LOG_LEVEL_DEBUG, "  stream size %d", title_size + 1024 + num_window_rects * 8 + num_visibility_rects * 8);
 
     out_uint32_le(s, 2); /* create_window */
     out_uint32_le(s, window_id); /* window_id */
@@ -1437,8 +1459,10 @@ rail_create_window(Window window_id, Window owner_id)
     flags |= WINDOW_ORDER_FIELD_OWNER;
     out_uint32_le(s, style); /* style */
     out_uint32_le(s, ext_style); /* extended_style */
+    LOG_DEVEL(LOG_LEVEL_DEBUG, "  owner 0x%8.8lx style 0x%8.8x ext_style 0x%8.8x", owner_id, style, ext_style);
     flags |= WINDOW_ORDER_FIELD_STYLE;
-    out_uint32_le(s, 0x05); /* show_state */
+    out_uint32_le(s, 0x05 + 1); /* show_state */
+    *title_bytes = 'X';
     LOG_DEVEL(LOG_LEVEL_DEBUG, "  title %s", title_bytes);
     flags |= WINDOW_ORDER_FIELD_SHOW;
     if (title_size > 0)
@@ -1822,6 +1846,7 @@ rail_xevent(void *xevent)
 
     if (!g_rail_up)
     {
+        LOG_DEVEL(LOG_LEVEL_TRACE, "rail is down!");
         return 1;
     }
 
@@ -2024,6 +2049,7 @@ rail_xevent(void *xevent)
             break;
 
         default:
+            LOG_DEVEL(LOG_LEVEL_DEBUG, "  xevent type 0x%8.8x, nothing at all!", lxevent->type);
             if (g_xrr_event_base > 0)
             {
                 if (lxevent->type == g_xrr_event_base + RRScreenChangeNotify)

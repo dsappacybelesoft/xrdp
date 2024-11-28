@@ -32,10 +32,7 @@
 #define CMD_DVC_CLOSE_CHANNEL   0x40
 #define CMD_DVC_CAPABILITY      0x50
 
-#define XRDP_DRDYNVC_CHANNEL_ID_TO_NAME(self, chan_id) \
-    (xrdp_channel_get_item((self), (chan_id)) != NULL \
-     ? xrdp_channel_get_item((self), (chan_id))->name \
-     : "unknown")
+#define XRDP_DRDYNVC_CHANNEL_ID_TO_NAME(self, chan_id) (self)->drdynvcs[(chan_id)].name /* only for test, REMOVE! */
 
 /*****************************************************************************/
 /* returns pointer or nil on error */
@@ -884,6 +881,7 @@ xrdp_channel_drdynvc_open(struct xrdp_channel *self, const char *name,
     self->drdynvcs[ChId].data_first = procs->data_first;
     self->drdynvcs[ChId].data = procs->data;
     self->drdynvcs[ChId].status = XRDP_DRDYNVC_STATUS_OPEN_SENT;
+    strncpy(self->drdynvcs[ChId].name, name, sizeof(((struct xrdp_drdynvc*)0)->name)); /* only for test, REMOVE! */
     return 0;
 }
 
