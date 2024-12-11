@@ -742,6 +742,97 @@ xrdp_mm_process_rail_create_window(struct xrdp_mm *self, struct stream *s)
     return rv;
 }
 
+/*****************************************************************************/
+/* returns error
+   process rail create window order TEST */
+static int
+xrdp_mm_process_rail_create_window_test(struct xrdp_mm *self, struct stream *s)
+{
+    int flags;
+    int window_id;
+    int title_bytes;
+    int index;
+    int bytes;
+    int rv;
+    struct rail_window_state_order rwso;
+
+    g_memset(&rwso, 0, sizeof(rwso));
+    LOG_HEXDUMP(LOG_LEVEL_DEBUG, "xrdp_mm_process_rail_create_window_test", s->data, (int)(s->end - s->data));
+    in_uint32_le(s, window_id);
+
+    LOG(LOG_LEVEL_DEBUG, "xrdp_mm_process_rail_create_window_test: 0x%8.8x", window_id);
+
+    in_uint32_le(s, rwso.owner_window_id);
+    in_uint32_le(s, rwso.style);
+    in_uint32_le(s, rwso.extended_style);
+    in_uint8(s, rwso.show_state);
+    in_uint16_le(s, title_bytes);
+    if (title_bytes > 0)
+    {
+        rwso.title_info = g_new(char, title_bytes + 1);
+        in_uint8a(s, rwso.title_info, title_bytes);
+        rwso.title_info[title_bytes] = 0;
+        // LOG(LOG_LEVEL_DEBUG, "title (%d): %s", title_bytes / 2, rwso.title_info);
+    }
+    in_uint32_le(s, rwso.client_offset_x);
+    in_uint32_le(s, rwso.client_offset_y);
+
+    in_uint32_le(s, rwso.resize_margin.left);
+    in_uint32_le(s, rwso.resize_margin.top);
+    in_uint32_le(s, rwso.resize_margin.right);
+    in_uint32_le(s, rwso.resize_margin.bottom);
+
+    in_uint32_le(s, rwso.window_offset_x);
+    in_uint32_le(s, rwso.window_offset_y);
+    in_uint32_le(s, rwso.window_client_delta_x);
+    in_uint32_le(s, rwso.window_client_delta_y);
+    in_uint32_le(s, rwso.window_width);
+    in_uint32_le(s, rwso.window_height);
+    in_uint16_le(s, rwso.num_window_rects);
+    if (rwso.num_window_rects > 0)
+    {
+        bytes = sizeof(struct rail_window_rect) * rwso.num_window_rects;
+        rwso.window_rects = (struct rail_window_rect *)g_malloc(bytes, 0);
+        for (index = 0; index < rwso.num_window_rects; index++)
+        {
+            in_uint16_le(s, rwso.window_rects[index].left);
+            in_uint16_le(s, rwso.window_rects[index].top);
+            in_uint16_le(s, rwso.window_rects[index].right);
+            in_uint16_le(s, rwso.window_rects[index].bottom);
+        }
+    }
+    in_uint32_le(s, rwso.visible_offset_x);
+    in_uint32_le(s, rwso.visible_offset_y);
+    in_uint16_le(s, rwso.num_visibility_rects);
+    if (rwso.num_visibility_rects > 0)
+    {
+        bytes = sizeof(struct rail_window_rect) * rwso.num_visibility_rects;
+        rwso.visibility_rects = (struct rail_window_rect *)g_malloc(bytes, 0);
+        for (index = 0; index < rwso.num_visibility_rects; index++)
+        {
+            in_uint16_le(s, rwso.visibility_rects[index].left);
+            in_uint16_le(s, rwso.visibility_rects[index].top);
+            in_uint16_le(s, rwso.visibility_rects[index].right);
+            in_uint16_le(s, rwso.visibility_rects[index].bottom);
+        }
+    }
+    in_uint8(s, rwso.enforce_z_order); // Enforce Z-Order
+    in_uint32_le(s, flags);
+    rv = libxrdp_orders_init(self->wm->session);
+    if (rv == 0)
+    {
+        rv = libxrdp_window_new_update(self->wm->session, window_id, &rwso, flags);
+    }
+    if (rv == 0)
+    {
+        rv = libxrdp_orders_send(self->wm->session);
+    }
+    g_free(rwso.title_info);
+    g_free(rwso.window_rects);
+    g_free(rwso.visibility_rects);
+    return rv;
+}
+
 #if 0
 /*****************************************************************************/
 /* returns error
@@ -931,6 +1022,9 @@ xrdp_mm_process_rail_drawing_orders(struct xrdp_mm *self, struct stream *s)
         case 2: /* create_window */
             xrdp_mm_process_rail_create_window(self, s);
             break;
+        case 3: /* create_window TEST */
+            xrdp_mm_process_rail_create_window_test(self, s);
+            break;
         case 4: /* destroy_window */
             xrdp_mm_process_rail_destroy_window(self, s);
             break;
@@ -941,6 +1035,7 @@ xrdp_mm_process_rail_drawing_orders(struct xrdp_mm *self, struct stream *s)
             rv = xrdp_mm_process_rail_update_window_text(self, s);
             break;
         default:
+            LOG_DEVEL(LOG_LEVEL_TRACE, "unknow drawing order: %d", order_type);
             break;
     }
 

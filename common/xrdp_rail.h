@@ -69,6 +69,9 @@
 #define WINDOW_ORDER_FIELD_DESKTOP_ARC_BEGAN            0x00000008
 #define WINDOW_ORDER_FIELD_DESKTOP_ZORDER               0x00000010
 #define WINDOW_ORDER_FIELD_DESKTOP_ACTIVE_WND           0x00000020
+#define WINDOW_ORDER_FIELD_RESIZE_MARGIN_X              0x00000080
+#define WINDOW_ORDER_FIELD_RESIZE_MARGIN_Y              0x08000000
+#define WINDOW_ORDER_FIELD_ENFORCE_SERVER_ZORDER        0x00080000
 
 struct rail_icon_info
 {
@@ -89,6 +92,14 @@ struct rail_window_rect
     short top;
     short right;
     short bottom;
+};
+
+struct rail_window_rect_32
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
 };
 
 struct rail_notify_icon_infotip
@@ -124,6 +135,8 @@ struct rail_window_state_order
     int visible_offset_y;
     int num_visibility_rects;
     struct rail_window_rect *visibility_rects;
+    struct rail_window_rect_32 resize_margin;
+    char enforce_z_order;
 };
 
 struct rail_notify_state_order

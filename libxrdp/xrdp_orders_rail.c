@@ -320,6 +320,22 @@ xrdp_orders_send_window_new_update(struct xrdp_orders *self, int window_id,
         order_size += 4;
     }
 
+    if (field_present_flags & WINDOW_ORDER_FIELD_RESIZE_MARGIN_X)
+    {
+        /* resizeMarginLeft (4 bytes) */
+        order_size += 4;
+        /* resizeMarginRight (4 bytes) */
+        order_size += 4;
+    }
+
+    if (field_present_flags & WINDOW_ORDER_FIELD_RESIZE_MARGIN_Y)
+    {
+        /* resizeMarginTop (4 bytes) */
+        order_size += 4;
+        /* resizeMarginBottom (4 bytes) */
+        order_size += 4;
+    }
+
     if (field_present_flags & WINDOW_ORDER_FIELD_RP_CONTENT)
     {
         /* RPContent (1 byte) */
@@ -376,6 +392,12 @@ xrdp_orders_send_window_new_update(struct xrdp_orders *self, int window_id,
         /* numVisibilityRects (2 bytes) */
         order_size += 2;
         order_size += 8 * window_state->num_visibility_rects;
+    }
+
+    if (field_present_flags & WINDOW_ORDER_FIELD_ENFORCE_SERVER_ZORDER)
+    {
+        /* enforceZOrder (1 byte) */
+        order_size++;
     }
 
     if (order_size < 12)
@@ -476,12 +498,26 @@ xrdp_orders_send_window_new_update(struct xrdp_orders *self, int window_id,
                   "ClientAreaWidth %d, ClientAreaHeight %d",
                   window_state->client_area_width, window_state->client_area_height);
     }
-    /* TODO: The [MS-RDPERP] spec section 2.2.1.3.1.2.1 has the following additional fields:
-     * WindowLeftResizeMargin (optional)
-     * WindowRightResizeMargin (optional)
-     * WindowTopResizeMargin (optional)
-     * WindowBottomResizeMargin (optional)
-     */
+
+    if (field_present_flags & WINDOW_ORDER_FIELD_RESIZE_MARGIN_X)
+    {
+        out_uint32_le(self->out_s, window_state->resize_margin.left);
+        out_uint32_le(self->out_s, window_state->resize_margin.top);
+
+        // LOG_DEVEL(LOG_LEVEL_TRACE, "Adding optional field [MS-RDPERP] TS_WINDOW_INFO "
+        //           "NumWindowRects %d, WindowRects <omitted from log>",
+        //           window_state->num_window_rects);
+    }
+
+    if (field_present_flags & WINDOW_ORDER_FIELD_RESIZE_MARGIN_Y)
+    {
+        out_uint32_le(self->out_s, window_state->resize_margin.right);
+        out_uint32_le(self->out_s, window_state->resize_margin.bottom);
+
+        // LOG_DEVEL(LOG_LEVEL_TRACE, "Adding optional field [MS-RDPERP] TS_WINDOW_INFO "
+        //           "NumWindowRects %d, WindowRects <omitted from log>",
+        //           window_state->num_window_rects);
+    }
 
     /* TODO: The [MS-RDPERP] spec says that:
      * The RPContent field only appears if the WndSupportLevel field of the
@@ -595,10 +631,18 @@ xrdp_orders_send_window_new_update(struct xrdp_orders *self, int window_id,
     /* TODO: The [MS-RDPERP] spec section 2.2.1.3.1.2.1 has the following additional fields:
      * OverlayDescription (optional, variable)
      * TaskbarButton (optional)
-     * EnforceServerZOrder (optional)
      * AppBarState (optional)
      * AppBarEdge (optional)
      */
+
+    if (field_present_flags & WINDOW_ORDER_FIELD_ENFORCE_SERVER_ZORDER)
+    {
+        /* enforceZOrder (1 byte) */
+        out_uint8(self->out_s, window_state->enforce_z_order);
+
+        // LOG_DEVEL(LOG_LEVEL_TRACE, "Adding optional field [MS-RDPERP] TS_WINDOW_INFO "
+        //           "ShowState 0x%2.2x", window_state->show_state);
+    }
 
     return 0;
 }
