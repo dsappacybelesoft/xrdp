@@ -671,6 +671,7 @@ xrdp_mm_process_rail_create_window(struct xrdp_mm *self, struct stream *s)
     struct rail_window_state_order rwso;
 
     g_memset(&rwso, 0, sizeof(rwso));
+    LOG_HEXDUMP(LOG_LEVEL_DEBUG, "xrdp_mm_process_rail_create_window", s->data, (int)(s->end - s->data));
     in_uint32_le(s, window_id);
 
     LOG(LOG_LEVEL_DEBUG, "xrdp_mm_process_rail_create_window: 0x%8.8x", window_id);
@@ -690,8 +691,14 @@ xrdp_mm_process_rail_create_window(struct xrdp_mm *self, struct stream *s)
     in_uint32_le(s, rwso.client_offset_y);
     in_uint32_le(s, rwso.client_area_width);
     in_uint32_le(s, rwso.client_area_height);
-    in_uint32_le(s, rwso.rp_content);
-    in_uint32_le(s, rwso.root_parent_handle);
+
+    in_uint32_le(s, rwso.resize_margin.left);
+    in_uint32_le(s, rwso.resize_margin.top);
+    in_uint32_le(s, rwso.resize_margin.right);
+    in_uint32_le(s, rwso.resize_margin.bottom);
+
+    // in_uint32_le(s, rwso.rp_content);
+    // in_uint32_le(s, rwso.root_parent_handle);
     in_uint32_le(s, rwso.window_offset_x);
     in_uint32_le(s, rwso.window_offset_y);
     in_uint32_le(s, rwso.window_client_delta_x);
@@ -726,6 +733,7 @@ xrdp_mm_process_rail_create_window(struct xrdp_mm *self, struct stream *s)
             in_uint16_le(s, rwso.visibility_rects[index].bottom);
         }
     }
+    in_uint8(s, rwso.enforce_z_order);
     in_uint32_le(s, flags);
     rv = libxrdp_orders_init(self->wm->session);
     if (rv == 0)

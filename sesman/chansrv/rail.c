@@ -140,6 +140,7 @@ struct rail_window_data
 #define TS_RAIL_ORDER_GET_APPID_RESP 0x000F
 /* Indicates a bi-directional Handshake PDU. server->client */
 #define TS_RAIL_ORDER_HANDSHAKE_EX 0x0013
+#define TS_RAIL_ORDER_ZORDER_SYNC 0x0014
 
 /* Resize the window. */
 #define SC_SIZE 0xF000
@@ -311,6 +312,23 @@ rail_send_init(void)
     free_stream(s);
     return 0;
 }
+
+// /*****************************************************************************/
+// static int
+// rail_send_zorder(void)
+// {
+//     struct stream *s;
+
+//     LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_send_zorder");
+//     make_stream(s);
+//     init_stream(s, 8182);
+//     out_uint32_le(s, TS_RAIL_ORDER_ZORDER_SYNC);
+//     out_uint32_le(s, 0x1234);
+//     s_mark_end(s);
+//     send_channel_data(g_rail_chan_id, s->data, (int)(s->end - s->data));
+//     free_stream(s);
+//     return 0;
+// }
 
 /******************************************************************************/
 static int
@@ -713,6 +731,8 @@ rail_restore_windows(void)
             if (window_attributes.map_state == IsViewable)
             {
                 rail_win_set_state(children[i], 0x0); /* WithdrawnState */
+                // rail_send_zorder();
+                // rail_show_window(0xFFFFFFFF, 0x2);
                 rail_test();
                 rail_create_window(children[i], g_root_window);
                 rail_win_set_state(children[i], 0x1); /* NormalState */
@@ -1470,6 +1490,7 @@ rail_create_window(Window window_id, Window owner_id)
     init_stream(s, 8192);
     LOG_DEVEL(LOG_LEVEL_DEBUG, "  stream size %d", title_size + 1024 + num_window_rects * 8 + num_visibility_rects * 8);
 
+#if 0
     out_uint32_le(s, 3); /* create_window TEST */
 
     if (crc || flags || i || ext_style || style);
@@ -1484,16 +1505,16 @@ rail_create_window(Window window_id, Window owner_id)
     // rwd->valid |= RWD_TITLE;
     // crc = get_string_crc("M\000i\000c\000r\000o\000s\000o\000f\000t\000 \000T\000e\000x\000t\000 \000I\000n\000p\000u\000t\000 \000A\000p\000p\000l\000i\000c\000a\000t\000i\000o\000n\000");
     // rwd->title_crc = crc;
-#if 0
+#else
     out_uint32_le(s, 2); /* create_window */
     out_uint32_le(s, window_id); /* window_id */
-    out_uint32_le(s, owner_id); /* owner_window_id */
+    out_uint32_le(s, 0x00000000 /*owner_id*/); /* owner_window_id */
     flags |= WINDOW_ORDER_FIELD_OWNER;
     out_uint32_le(s, style); /* style */
     out_uint32_le(s, ext_style); /* extended_style */
     LOG_DEVEL(LOG_LEVEL_DEBUG, "  owner 0x%8.8lx style 0x%8.8x ext_style 0x%8.8x", owner_id, style, ext_style);
     flags |= WINDOW_ORDER_FIELD_STYLE;
-    out_uint32_le(s, 0x05 + 1); /* show_state */
+    out_uint32_le(s, 0x05); /* show_state */
     *title_bytes = 'X';
     LOG_DEVEL(LOG_LEVEL_DEBUG, "  title %s", title_bytes);
     flags |= WINDOW_ORDER_FIELD_SHOW;
@@ -1520,9 +1541,15 @@ rail_create_window(Window window_id, Window owner_id)
     out_uint32_le(s, width); /* client_area_width */
     out_uint32_le(s, height); /* client_area_height */
     flags |= WINDOW_ORDER_FIELD_CLIENT_AREA_SIZE;
-    out_uint32_le(s, 0); /* rp_content */
-    out_uint32_le(s, g_root_window); /* root_parent_handle */
-    flags |= WINDOW_ORDER_FIELD_ROOT_PARENT;
+    out_uint32_le(s, 0); /* margin x */
+    out_uint32_le(s, 0);
+    flags |= WINDOW_ORDER_FIELD_RESIZE_MARGIN_X;
+    out_uint32_le(s, 0); /* margin y */
+    out_uint32_le(s, 0);
+    flags |= WINDOW_ORDER_FIELD_RESIZE_MARGIN_Y;
+    // out_uint32_le(s, 0); /* rp_content */
+    // out_uint32_le(s, g_root_window); /* root_parent_handle */
+    // flags |= WINDOW_ORDER_FIELD_ROOT_PARENT;
     out_uint32_le(s, x); /* window_offset_x */
     out_uint32_le(s, y); /* window_offset_y */
     flags |= WINDOW_ORDER_FIELD_WND_OFFSET;
@@ -1553,6 +1580,8 @@ rail_create_window(Window window_id, Window owner_id)
         out_uint16_le(s, height); /* bottom */
     }
     flags |= WINDOW_ORDER_FIELD_VISIBILITY;
+    out_uint8(s, 0); /* zorder */
+    flags |= WINDOW_ORDER_FIELD_ENFORCE_SERVER_ZORDER;
     out_uint32_le(s, flags); /*flags*/
 #endif
 

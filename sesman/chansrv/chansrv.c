@@ -331,6 +331,7 @@ send_rail_drawing_orders(char *data, int size)
     out_uint32_le(s, 8 + size); /* size */
     out_uint8a(s, data, size);
     s_mark_end(s);
+    LOG_HEXDUMP(LOG_LEVEL_DEBUG, "send_rail_drawing_orders stream", s->data, (int)(s->end - s->data));
     error = trans_force_write(g_con_trans);
     if (error != 0)
     {
