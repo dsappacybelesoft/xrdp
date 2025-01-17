@@ -1515,7 +1515,7 @@ rail_create_window(Window window_id, Window owner_id)
     LOG_DEVEL(LOG_LEVEL_DEBUG, "  owner 0x%8.8lx style 0x%8.8x ext_style 0x%8.8x", owner_id, style, ext_style);
     flags |= WINDOW_ORDER_FIELD_STYLE;
     out_uint32_le(s, 0x05); /* show_state */
-    *title_bytes = 'X';
+    if (title_bytes) *title_bytes = 'X';
     LOG_DEVEL(LOG_LEVEL_DEBUG, "  title %s", title_bytes);
     flags |= WINDOW_ORDER_FIELD_SHOW;
     if (title_size > 0)
