@@ -881,7 +881,7 @@ xrdp_channel_drdynvc_open(struct xrdp_channel *self, const char *name,
     self->drdynvcs[ChId].data_first = procs->data_first;
     self->drdynvcs[ChId].data = procs->data;
     self->drdynvcs[ChId].status = XRDP_DRDYNVC_STATUS_OPEN_SENT;
-    strncpy(self->drdynvcs[ChId].name, name, sizeof(((struct xrdp_drdynvc*)0)->name)); /* only for test, REMOVE! */
+    strncpy(self->drdynvcs[ChId].name, name, sizeof(((struct xrdp_drdynvc *)0)->name)); /* only for test, REMOVE! */
     return 0;
 }
 

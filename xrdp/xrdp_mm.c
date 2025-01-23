@@ -841,7 +841,7 @@ xrdp_mm_process_rail_create_window_test(struct xrdp_mm *self, struct stream *s)
     return rv;
 }
 
-#if 0
+#if 1
 /*****************************************************************************/
 /* returns error
    process rail configure window order */
@@ -864,8 +864,8 @@ xrdp_mm_process_rail_configure_window(struct xrdp_mm *self, struct stream *s)
     in_uint32_le(s, rwso.client_offset_y);
     in_uint32_le(s, rwso.client_area_width);
     in_uint32_le(s, rwso.client_area_height);
-    in_uint32_le(s, rwso.rp_content);
-    in_uint32_le(s, rwso.root_parent_handle);
+    // in_uint32_le(s, rwso.rp_content);
+    // in_uint32_le(s, rwso.root_parent_handle);
     in_uint32_le(s, rwso.window_offset_x);
     in_uint32_le(s, rwso.window_offset_y);
     in_uint32_le(s, rwso.window_client_delta_x);
@@ -1042,8 +1042,11 @@ xrdp_mm_process_rail_drawing_orders(struct xrdp_mm *self, struct stream *s)
         case 8: /* update title info */
             rv = xrdp_mm_process_rail_update_window_text(self, s);
             break;
+        case 10: /* configure_window */
+            xrdp_mm_process_rail_configure_window(self, s);
+            break;
         default:
-            LOG_DEVEL(LOG_LEVEL_TRACE, "unknow drawing order: %d", order_type);
+            LOG_DEVEL(LOG_LEVEL_ERROR, "unknown drawing order: %d", order_type);
             break;
     }
 

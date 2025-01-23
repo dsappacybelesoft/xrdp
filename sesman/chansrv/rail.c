@@ -46,6 +46,7 @@
 extern int g_rail_chan_id;      /* in chansrv.c */
 extern int g_display_num;       /* in chansrv.c */
 extern char *g_exec_name;       /* in chansrv.c */
+extern char *g_exec_args;       /* in chansrv.c */
 extern tbus g_exec_event;       /* in chansrv.c */
 extern tbus g_exec_mutex;       /* in chansrv.c */
 extern tbus g_exec_sem;         /* in chansrv.c */
@@ -369,8 +370,8 @@ rail_init(void)
 {
     LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_init:");
     xcommon_init();
-    
-    /* When the client has requested a RAIL session, [MS-RDPERP] 1.3.2.1 states 
+
+    /* When the client has requested a RAIL session, [MS-RDPERP] 1.3.2.1 states
     that the server must send the TS_RAIL_ORDER_HANDSHAKE PDU */
     rail_send_init();
 
@@ -521,6 +522,10 @@ rail_process_exec(struct stream *s, int size)
             /* ask main thread to fork */
             tc_mutex_lock(g_exec_mutex);
             g_exec_name = ExeOrFile;
+            if (ArgumentsLen)
+            {
+                g_exec_args = Arguments;
+            }
             g_set_wait_obj(g_exec_event);
             tc_sem_dec(g_exec_sem);
             tc_mutex_unlock(g_exec_mutex);
@@ -1496,8 +1501,8 @@ rail_create_window(Window window_id, Window owner_id)
     if (crc || flags || i || ext_style || style);
     //                  2ei a7 00  9edf08197e0101000000000000000094880020080040004d006900630072006f0073006f006600740020005400650078007400200049006e0070007500740020004100700070006c00690063006100740069006f006e000000000000000000000000000000000000000000000000000000000000000000000000000000000080070000380400000100000000008007380400000000000000000100000000008007380400
     //unsigned char* p = ".\247\000\236\337\b\031~\001\001\000\000\000\000\000\000\000\000\224\210\000 \b\000@\000M\000i\000c\000r\000o\000s\000o\000f\000t\000 \000T\000e\000x\000t\000 \000I\000n\000p\000u\000t\000 \000A\000p\000p\000l\000i\000c\000a\000t\000i\000o\000n\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\200\a\000\0008\004\000\000\001\000\000\000\000\000\200\a8\004\000\000\000\000\000\000\000\000\001\000\000\000\000\000\200\a8\004\000";
-    const char* pflags = "\236\337\b\031";
-    const char* pdata = "~\001\001\000\000\000\000\000\000\000\000\224\210\000 \b\000 \000Microsoft Text Input Application\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\200\a\000\0008\004\000\000\001\000\000\000\000\000\200\a8\004\000\000\000\000\000\000\000\000\001\000\000\000\000\000\200\a8\004\000";
+    const char *pflags = "\236\337\b\031";
+    const char *pdata = "~\001\001\000\000\000\000\000\000\000\000\224\210\000 \b\000 \000Microsoft Text Input Application\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\200\a\000\0008\004\000\000\001\000\000\000\000\000\200\a8\004\000\000\000\000\000\000\000\000\001\000\000\000\000\000\200\a8\004\000";
 
     out_uint8a(s, pdata, 128);
     out_uint8a(s, pflags, 4);
@@ -1515,7 +1520,10 @@ rail_create_window(Window window_id, Window owner_id)
     LOG_DEVEL(LOG_LEVEL_DEBUG, "  owner 0x%8.8lx style 0x%8.8x ext_style 0x%8.8x", owner_id, style, ext_style);
     flags |= WINDOW_ORDER_FIELD_STYLE;
     out_uint32_le(s, 0x05); /* show_state */
-    if (title_bytes) *title_bytes = 'X';
+    if (title_bytes)
+    {
+        *title_bytes = 'X';
+    }
     LOG_DEVEL(LOG_LEVEL_DEBUG, "  title %s", title_bytes);
     flags |= WINDOW_ORDER_FIELD_SHOW;
     if (title_size > 0)
@@ -1843,9 +1851,9 @@ rail_configure_window(XConfigureEvent *config)
     out_uint32_le(s, config->width); /* client_area_width */
     out_uint32_le(s, config->height); /* client_area_height */
     flags |= WINDOW_ORDER_FIELD_CLIENT_AREA_SIZE;
-    out_uint32_le(s, 0); /* rp_content */
-    out_uint32_le(s, g_root_window); /* root_parent_handle */
-    flags |= WINDOW_ORDER_FIELD_ROOT_PARENT;
+    // out_uint32_le(s, 0); /* rp_content */
+    // out_uint32_le(s, g_root_window); /* root_parent_handle */
+    // flags |= WINDOW_ORDER_FIELD_ROOT_PARENT;
     out_uint32_le(s, config->x); /* window_offset_x */
     out_uint32_le(s, config->y); /* window_offset_y */
     flags |= WINDOW_ORDER_FIELD_WND_OFFSET;
@@ -2062,9 +2070,7 @@ rail_xevent(void *xevent)
                     lxevent = &lastevent;
                 }
             }
-#if 0
             rail_configure_window(&(lxevent->xconfigure));
-#endif
             break;
 
         case FocusIn:

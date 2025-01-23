@@ -2902,6 +2902,9 @@ g_execlp3(const char *a1, const char *a2, const char *a3)
     int rv;
     const char *args[] = {a2, a3, NULL};
     char args_str[ARGS_STR_LEN];
+    char *token;
+    char **p_args = NULL;
+    int i = 0;
 
     g_strnjoin(args_str, ARGS_STR_LEN, " ", args, 2);
 
@@ -2910,7 +2913,40 @@ g_execlp3(const char *a1, const char *a2, const char *a3)
         a1, args_str);
 
     g_rm_temp_dir();
-    rv = execlp(a1, a2, a3, (void *)0);
+    token = strtok(args_str, " ");
+
+    while (token != NULL)
+    {
+        char **p_temp = realloc(p_args, (i + 1) * sizeof(char *));
+        if (p_temp == NULL)
+        {
+            LOG(LOG_LEVEL_ERROR, "Out of memory!");
+            g_free(p_args);
+            return 1;
+        }
+        p_args = p_temp;
+        p_args[i] = token;
+        i++;
+        token = strtok(NULL, " ");
+    }
+
+    char **p_temp = realloc(p_args, (i + 1) * sizeof(char *));
+    if (p_temp == NULL)
+    {
+        LOG(LOG_LEVEL_ERROR, "Out of memory!!");
+        g_free(p_args);
+        return 1;
+    }
+    p_args = p_temp;
+    p_args[i] = NULL;
+
+    if (i == 0)
+    {
+        p_args = malloc(2 * sizeof(char *));
+        p_args[0] = NULL;
+    }
+
+    rv = execvp(p_args[0], p_args);
 
     /* should not get here */
     LOG(LOG_LEVEL_ERROR,
@@ -2918,6 +2954,7 @@ g_execlp3(const char *a1, const char *a2, const char *a3)
         "returned errno: %d, description: %s",
         a1, args_str, g_get_errno(), g_get_strerror());
 
+    g_free(p_args);
     return rv;
 #endif
 }

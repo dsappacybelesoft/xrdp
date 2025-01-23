@@ -72,6 +72,7 @@ int g_rdpdr_chan_id = -1;   /* rdpdr   */
 int g_rail_chan_id = -1;    /* rail    */
 
 char *g_exec_name;
+char *g_exec_args = 0;
 tbus g_exec_event = 0;
 tbus g_exec_mutex;
 tbus g_exec_sem;
@@ -1658,7 +1659,7 @@ run_exec(void)
         g_close_wait_obj(g_exec_event);
         tc_mutex_delete(g_exec_mutex);
         tc_sem_delete(g_exec_sem);
-        g_execlp3(g_exec_name, g_exec_name, 0);
+        g_execlp3(g_exec_name, g_exec_name, g_exec_args);
         g_exit(0);
     }
 
