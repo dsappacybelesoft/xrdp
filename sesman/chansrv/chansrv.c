@@ -291,6 +291,7 @@ send_channel_data(int chan_id, const char *data, int size)
         }
         out_uint32_le(s, 0); /* version */
         out_uint32_le(s, 26 + sending_bytes);
+        // from here, sent to xrdp_mm.c::xrdp_mm_chan_process_msg()
         out_uint32_le(s, 8); /* msg id */
         out_uint32_le(s, 18 + sending_bytes);
         out_uint16_le(s, chan_id);
@@ -332,7 +333,6 @@ send_rail_drawing_orders(char *data, int size)
     out_uint32_le(s, 8 + size); /* size */
     out_uint8a(s, data, size);
     s_mark_end(s);
-    LOG_HEXDUMP(LOG_LEVEL_DEBUG, "send_rail_drawing_orders stream", s->data, (int)(s->end - s->data));
     error = trans_force_write(g_con_trans);
     if (error != 0)
     {

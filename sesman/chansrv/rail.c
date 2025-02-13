@@ -72,6 +72,7 @@ static struct list *g_window_list = 0;
 static int g_got_focus = 0;
 static int g_focus_counter = 0;
 static Window g_focus_win = 0;
+static unsigned char *g_data = 0;
 
 static int g_xrr_event_base = 0; /* non zero means we got extension */
 
@@ -310,6 +311,102 @@ rail_send_init(void)
     size_ptr[0] = bytes;
     size_ptr[1] = bytes >> 8;
     send_channel_data(g_rail_chan_id, s->data, bytes);
+    free_stream(s);
+    return 0;
+}
+
+/*****************************************************************************/
+struct rail_min_max_info
+{
+    int window_id;
+    short max_width;
+    short max_height;
+    short max_pos_x;
+    short max_pos_y;
+    short min_track_width;
+    short min_track_height;
+    short max_track_width;
+    short max_track_height;
+};
+
+static int
+rail_send_min_max_info(const struct rail_min_max_info* info)
+{
+    struct stream *s;
+    const int order_size = 24;
+
+    LOG_DEVEL(LOG_LEVEL_DEBUG, "rail_send_min_max_info: 0x%8.8x", 
+                                info->window_id);
+    make_stream(s);
+    init_stream(s, 8182); // this size can be calculated more accuratly
+
+    // TS_RAIL_PDU_HEADER
+    out_uint16_le(s, TS_RAIL_ORDER_MINMAXINFO);
+    out_uint16_le(s, order_size);
+
+    // TS_RAIL_ORDER_MINMAXINFO body
+    out_uint32_le(s, info->window_id);
+    out_uint16_le(s, info->max_width);
+    out_uint16_le(s, info->max_height);
+    out_uint16_le(s, info->max_pos_x);
+    out_uint16_le(s, info->max_pos_y);
+    out_uint16_le(s, info->min_track_width);
+    out_uint16_le(s, info->min_track_height);
+    out_uint16_le(s, info->max_track_width);
+    out_uint16_le(s, info->max_track_height);
+
+    s_mark_end(s);
+    send_channel_data(g_rail_chan_id, s->data, order_size);
+    free_stream(s);
+    return 0;
+}
+
+/*****************************************************************************/
+struct rail_local_move_size
+{
+    int window_id;
+    bool_t is_move_size_start;
+    short move_size_type;
+    short pos_x;
+    short pos_y;
+};
+
+#define RAIL_WMSZ_LEFT          0x0001
+#define RAIL_WMSZ_RIGHT         0x0002
+#define RAIL_WMSZ_TOP           0x0003
+#define RAIL_WMSZ_TOPLEFT       0x0004
+#define RAIL_WMSZ_TOPRIGHT      0x0005
+#define RAIL_WMSZ_BOTTOM        0x0006
+#define RAIL_WMSZ_BOTTOMLEFT    0x0007
+#define RAIL_WMSZ_BOTTOMRIGHT   0x0008
+#define RAIL_WMSZ_MOVE          0x0009
+#define RAIL_WMSZ_KEYMOVE       0x000A
+#define RAIL_WMSZ_KEYSIZE       0x000B
+
+static int
+rail_send_local_move_size(const struct rail_local_move_size *local)
+{
+    struct stream *s;
+    const int order_size = 16;
+
+    LOG_DEVEL(LOG_LEVEL_DEBUG, "rail_send_local_move_size: 0x%8.8x", 
+                                local->window_id);
+    make_stream(s);
+    init_stream(s, 8182); // this size can be calculated more accuratly
+
+    // TS_RAIL_PDU_HEADER
+    out_uint16_le(s, TS_RAIL_ORDER_LOCALMOVESIZE);
+    out_uint16_le(s, order_size);
+
+    // TS_RAIL_ORDER_LOCALMOVESIZE body
+    out_uint32_le(s, local->window_id);
+    out_uint16_le(s, local->is_move_size_start);
+    out_uint16_le(s, local->move_size_type);
+    out_uint16_le(s, local->pos_x);
+    out_uint16_le(s, local->pos_y);
+
+    s_mark_end(s);
+    send_channel_data(g_rail_chan_id, s->data, order_size);
     free_stream(s);
     return 0;
 }
@@ -693,27 +790,6 @@ rail_select_input(Window window_id)
     return 0;
 }
 
-static int
-rail_test(void)
-{
-    int flags;
-    struct stream *s;
-
-    LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_test");
-    make_stream(s);
-    init_stream(s, 1024);
-
-    flags = WINDOW_ORDER_TYPE_WINDOW | WINDOW_ORDER_FIELD_SHOW;
-    out_uint32_le(s, 6); /* show_window */
-    out_uint32_le(s, 0xFFFFFFFF); /* window_id */
-    out_uint32_le(s, flags); /* flags */
-    out_uint32_le(s, 0x2); /* show_state */
-    s_mark_end(s);
-    LOG_HEXDUMP(LOG_LEVEL_DEBUG, "rail_test stream:", s->data, (int)(s->end - s->data));
-    send_rail_drawing_orders(s->data, (int)(s->end - s->data));
-    free_stream(s);
-    return 0;
-}
 
 /*****************************************************************************/
 static int
@@ -737,8 +813,6 @@ rail_restore_windows(void)
             {
                 rail_win_set_state(children[i], 0x0); /* WithdrawnState */
                 // rail_send_zorder();
-                // rail_show_window(0xFFFFFFFF, 0x2);
-                rail_test();
                 rail_create_window(children[i], g_root_window);
                 rail_win_set_state(children[i], 0x1); /* NormalState */
                 rail_win_send_text(children[i]);
@@ -998,6 +1072,7 @@ rail_process_system_command(struct stream *s, int size)
 }
 
 /*****************************************************************************/
+// TODO: arrive data cold be used, review!!
 static int
 rail_process_handshake(struct stream *s, int size)
 {
@@ -1063,40 +1138,42 @@ rail_process_window_move(struct stream *s, int size)
 }
 
 /*****************************************************************************/
-static int
-rail_process_local_move_size(struct stream *s, int size)
-{
-    int window_id;
-    int is_move_size_start;
-    int move_size_type;
-    int pos_x;
-    int pos_y;
-    tsi16 si16;
+/* server to client only - never will be called! */
+// static int
+// rail_process_local_move_size(struct stream *s, int size)
+// {
+//     int window_id;
+//     int is_move_size_start;
+//     int move_size_type;
+//     int pos_x;
+//     int pos_y;
+//     tsi16 si16;
 
-    LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_process_local_move_size:");
-    in_uint32_le(s, window_id);
-    in_uint16_le(s, is_move_size_start);
-    in_uint16_le(s, move_size_type);
-    in_uint16_le(s, si16);
-    pos_x = si16;
-    in_uint16_le(s, si16);
-    pos_y = si16;
-    LOG(LOG_LEVEL_DEBUG, "  window_id 0x%8.8x is_move_size_start %d move_size_type %d "
-        "pos_x %d pos_y %d", window_id, is_move_size_start, move_size_type,
-        pos_x, pos_y);
-    return 0;
-}
-
-/*****************************************************************************/
-/* server to client only */
-static int
-rail_process_min_max_info(struct stream *s, int size)
-{
-    LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_process_min_max_info:");
-    return 0;
-}
+//     LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_process_local_move_size:");
+//     in_uint32_le(s, window_id);
+//     in_uint16_le(s, is_move_size_start);
+//     in_uint16_le(s, move_size_type);
+//     in_uint16_le(s, si16);
+//     pos_x = si16;
+//     in_uint16_le(s, si16);
+//     pos_y = si16;
+//     LOG(LOG_LEVEL_DEBUG, "  window_id 0x%8.8x is_move_size_start %d move_size_type %d "
+//         "pos_x %d pos_y %d", window_id, is_move_size_start, move_size_type,
+//         pos_x, pos_y);
+//     return 0;
+// }
 
 /*****************************************************************************/
+/* server to client only - never will be called! */
+// static int
+// rail_process_min_max_info(struct stream *s, int size)
+// {
+//     LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_process_min_max_info:");
+//     return 0;
+// }
+
+/*****************************************************************************/
+// TODO: arrive data cold be used, review!!
 static int
 rail_process_client_status(struct stream *s, int size)
 {
@@ -1128,6 +1205,7 @@ rail_process_sys_menu(struct stream *s, int size)
 }
 
 /*****************************************************************************/
+// TODO: arrive data cold be used, review!!
 static int
 rail_process_lang_bar_info(struct stream *s, int size)
 {
@@ -1140,6 +1218,7 @@ rail_process_lang_bar_info(struct stream *s, int size)
 }
 
 /*****************************************************************************/
+// TODO: arrive data cold be used, review!!
 static int
 rail_process_appid_req(struct stream *s, int size)
 {
@@ -1156,13 +1235,13 @@ rail_process_appid_resp(struct stream *s, int size)
 }
 
 /*****************************************************************************/
-/* server to client only */
-static int
-rail_process_exec_result(struct stream *s, int size)
-{
-    LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_process_exec_result:");
-    return 0;
-}
+/* server to client only - never will be called! */
+// static int
+// rail_process_exec_result(struct stream *s, int size)
+// {
+//     LOG_DEVEL(LOG_LEVEL_DEBUG, "chansrv::rail_process_exec_result:");
+//     return 0;
+// }
 
 /*****************************************************************************/
 /* data in from client ( client -> xrdp -> chansrv ) */
@@ -1201,12 +1280,14 @@ rail_data_in(struct stream *s, int chan_id, int chan_flags, int length,
         case TS_RAIL_ORDER_WINDOWMOVE: /* 8 */
             rail_process_window_move(s, size);
             break;
-        case TS_RAIL_ORDER_LOCALMOVESIZE: /* 9 */
-            rail_process_local_move_size(s, size);
-            break;
-        case TS_RAIL_ORDER_MINMAXINFO: /* 10 */
-            rail_process_min_max_info(s, size);
-            break;
+        /* server to client only */
+        // case TS_RAIL_ORDER_LOCALMOVESIZE: /* 9 */
+        //     rail_process_local_move_size(s, size);
+        //     break;
+        /* server to client only */
+        // case TS_RAIL_ORDER_MINMAXINFO: /* 10 */
+        //     rail_process_min_max_info(s, size);
+        //     break;
         case TS_RAIL_ORDER_CLIENTSTATUS: /* 11 */
             rail_process_client_status(s, size);
             break;
@@ -1222,9 +1303,10 @@ rail_data_in(struct stream *s, int chan_id, int chan_flags, int length,
         case TS_RAIL_ORDER_GET_APPID_RESP: /* 15 */
             rail_process_appid_resp(s, size);
             break;
-        case TS_RAIL_ORDER_EXEC_RESULT: /* 128 */
-            rail_process_exec_result(s, size);
-            break;
+        /* server to client only */
+        // case TS_RAIL_ORDER_EXEC_RESULT: /* 128 */
+        //     rail_process_exec_result(s, size);
+        //     break;
         default:
             LOG_DEVEL(LOG_LEVEL_DEBUG, "rail_data_in: unknown code %d size %d", code, size);
             break;
@@ -1815,7 +1897,7 @@ rail_configure_window(XConfigureEvent *config)
 {
     int num_window_rects = 1;
     int num_visibility_rects = 1;
-    int i = 0;
+    // int i = 0;
     int flags;
     int index;
     int window_id;
@@ -1837,6 +1919,13 @@ rail_configure_window(XConfigureEvent *config)
         return 0;
     }
 
+    // this data should be obtained dinamicaly, follow g_data usage
+    // now use a hardcoded data for simplicity
+    // extents vales are: left, right, top y bottom borders
+    // of WM related (OpenBox)
+    long* extents = (long*)(const long[]){ 1, 1, 22, 5 };
+    // extents = (long*) g_data;
+
     flags = WINDOW_ORDER_TYPE_WINDOW;
 
     make_stream(s);
@@ -1845,45 +1934,45 @@ rail_configure_window(XConfigureEvent *config)
     out_uint32_le(s, 10); /* configure_window */
     out_uint32_le(s, window_id); /* window_id */
 
-    out_uint32_le(s, 0); /* client_offset_x */
-    out_uint32_le(s, 0); /* client_offset_y */
+    out_uint32_le(s, config->x); /* client_offset_x */
+    out_uint32_le(s, config->y); /* client_offset_y */
     flags |= WINDOW_ORDER_FIELD_CLIENT_AREA_OFFSET;
-    out_uint32_le(s, config->width); /* client_area_width */
-    out_uint32_le(s, config->height); /* client_area_height */
-    flags |= WINDOW_ORDER_FIELD_CLIENT_AREA_SIZE;
+    // out_uint32_le(s, config->width); /* client_area_width */
+    // out_uint32_le(s, config->height); /* client_area_height */
+    // flags |= WINDOW_ORDER_FIELD_CLIENT_AREA_SIZE;
     // out_uint32_le(s, 0); /* rp_content */
     // out_uint32_le(s, g_root_window); /* root_parent_handle */
     // flags |= WINDOW_ORDER_FIELD_ROOT_PARENT;
     out_uint32_le(s, config->x); /* window_offset_x */
     out_uint32_le(s, config->y); /* window_offset_y */
     flags |= WINDOW_ORDER_FIELD_WND_OFFSET;
-    out_uint32_le(s, 0); /* window_client_delta_x */
-    out_uint32_le(s, 0); /* window_client_delta_y */
+    out_uint32_le(s, config->x + extents[0]); /* window_client_delta_x */
+    out_uint32_le(s, config->y + extents[2]); /* window_client_delta_y */
     flags |= WINDOW_ORDER_FIELD_WND_CLIENT_DELTA;
-    out_uint32_le(s, config->width); /* window_width */
-    out_uint32_le(s, config->height); /* window_height */
-    flags |= WINDOW_ORDER_FIELD_WND_SIZE;
-    out_uint16_le(s, num_window_rects); /* num_window_rects */
-    for (i = 0; i < num_window_rects; i++)
-    {
-        out_uint16_le(s, 0); /* left */
-        out_uint16_le(s, 0); /* top */
-        out_uint16_le(s, config->width); /* right */
-        out_uint16_le(s, config->height); /* bottom */
-    }
-    flags |= WINDOW_ORDER_FIELD_WND_RECTS;
+    // out_uint32_le(s, config->width); /* window_width */
+    // out_uint32_le(s, config->height); /* window_height */
+    // flags |= WINDOW_ORDER_FIELD_WND_SIZE;
+    // out_uint16_le(s, num_window_rects); /* num_window_rects */
+    // for (i = 0; i < num_window_rects; i++)
+    // {
+    //     out_uint16_le(s, 0); /* left */
+    //     out_uint16_le(s, 0); /* top */
+    //     out_uint16_le(s, config->width); /* right */
+    //     out_uint16_le(s, config->height); /* bottom */
+    // }
+    // flags |= WINDOW_ORDER_FIELD_WND_RECTS;
     out_uint32_le(s, config->x); /* visible_offset_x */
     out_uint32_le(s, config->y); /* visible_offset_y */
     flags |= WINDOW_ORDER_FIELD_VIS_OFFSET;
-    out_uint16_le(s, num_visibility_rects); /* num_visibility_rects */
-    for (i = 0; i < num_visibility_rects; i++)
-    {
-        out_uint16_le(s, 0); /* left */
-        out_uint16_le(s, 0); /* top */
-        out_uint16_le(s, config->width); /* right */
-        out_uint16_le(s, config->height); /* bottom */
-    }
-    flags |= WINDOW_ORDER_FIELD_VISIBILITY;
+    // out_uint16_le(s, num_visibility_rects); /* num_visibility_rects */
+    // for (i = 0; i < num_visibility_rects; i++)
+    // {
+    //     out_uint16_le(s, 0); /* left */
+    //     out_uint16_le(s, 0); /* top */
+    //     out_uint16_le(s, config->width); /* right */
+    //     out_uint16_le(s, config->height); /* bottom */
+    // }
+    // flags |= WINDOW_ORDER_FIELD_VISIBILITY;
     out_uint32_le(s, flags); /*flags*/
 
     s_mark_end(s);
@@ -1924,6 +2013,10 @@ rail_xevent(void *xevent)
     rv = 1;
     lxevent = (XEvent *)xevent;
 
+    static int notify_focus_mode = NotifyNormal;
+    static bool_t local_move_size_started = False;
+    static short _x_ = 0, _y_ = 0;
+
     switch (lxevent->type)
     {
         case PropertyNotify:
@@ -1931,6 +2024,35 @@ rail_xevent(void *xevent)
             LOG_DEVEL(LOG_LEVEL_DEBUG, "  got PropertyNotify window_id 0x%8.8lx %s state new %d",
                       lxevent->xproperty.window, prop_name,
                       lxevent->xproperty.state == PropertyNewValue);
+
+            // This data could be getted at main, after g_display is setted
+            // see xcon.c:40
+            if (!g_data && 0 /* disabled, for now */)
+            {
+                Window w = 0;
+                Atom a, t;
+                int f;
+                unsigned long n, b;
+                // long* extents = NULL;
+                XEvent e;
+
+                // Get a _NET_FRAME_EXTENTS
+                a = XInternAtom(g_display, "_NET_FRAME_EXTENTS", True);
+
+                // Wait, util data is setted
+                while (XGetWindowProperty(g_display, w, a, 0, 4, False, AnyPropertyType, &t, &f, &n, &b, &g_data) != Success || n != 4 || b != 0) {
+                    // printf("wait...\n");
+                    XNextEvent(g_display, &e);
+                }
+
+                // Date is now setted
+                // extents = (long*) g_data;
+                // printf("Borders: left %ld, right %ld, top %ld, bottom %ld\n",
+                //         extents[0], extents[1], extents[2], extents[3]);
+
+                // The data shoulkd be free
+                // XFree(data);
+            }
 
             if (list_index_of(g_window_list, lxevent->xproperty.window) < 0)
             {
@@ -1986,6 +2108,11 @@ rail_xevent(void *xevent)
             {
                 rail_destroy_window(lxevent->xdestroywindow.window);
                 list_remove_item(g_window_list, index);
+            }
+            if (g_data)
+            {
+                XFree(g_data);
+                g_data = NULL;
             }
             rv = 0;
             break;
@@ -2051,8 +2178,11 @@ rail_xevent(void *xevent)
             break;
 
         case ConfigureNotify:
-            LOG_DEVEL(LOG_LEVEL_DEBUG, "  got ConfigureNotify 0x%8.8lx event 0x%8.8lx", lxevent->xconfigure.window,
-                      lxevent->xconfigure.event);
+            _x_ = lxevent->xconfigure.x;
+            _y_ = lxevent->xconfigure.y;
+
+            LOG_DEVEL(LOG_LEVEL_DEBUG, "  got ConfigureNotify 0x%8.8lx event 0x%8.8lx %d %d", 
+                        lxevent->xconfigure.window, lxevent->xconfigure.event, _x_, _y_);
             rv = 0;
             if (lxevent->xconfigure.event != lxevent->xconfigure.window ||
                     lxevent->xconfigure.override_redirect)
@@ -2070,16 +2200,61 @@ rail_xevent(void *xevent)
                     lxevent = &lastevent;
                 }
             }
+
+            if (notify_focus_mode == NotifyGrab && !local_move_size_started)
+            {    
+                Window root, child;
+                int root_x, root_y, win_x, win_y;
+                unsigned int mask;
+
+                XQueryPointer(g_display, lxevent->xconfigure.window, &root, &child, &root_x, &root_y, &win_x, &win_y, &mask);
+
+                struct rail_local_move_size local = {
+                    lxevent->xconfigure.window,
+                    True, RAIL_WMSZ_MOVE, win_x, win_y };
+
+                local_move_size_started = rail_send_local_move_size(&local) == 0;
+            }
+            
             rail_configure_window(&(lxevent->xconfigure));
             break;
 
         case FocusIn:
-            LOG_DEVEL(LOG_LEVEL_DEBUG, "  got FocusIn");
+            notify_focus_mode = lxevent->xfocus.mode;
+            LOG_DEVEL(LOG_LEVEL_DEBUG, "  got FocusIn mode %d %d %d",  
+                    notify_focus_mode, _x_, _y_);
             g_focus_win = lxevent->xfocus.window;
+
+            if (notify_focus_mode == NotifyUngrab)
+            {
+                struct rail_local_move_size local = {
+                    lxevent->xfocus.window, False, RAIL_WMSZ_MOVE, _x_, _y_ };
+
+                rail_send_local_move_size(&local);
+                local_move_size_started = False;
+            }
             break;
 
         case FocusOut:
-            LOG_DEVEL(LOG_LEVEL_DEBUG, "  got FocusOut");
+            notify_focus_mode = lxevent->xfocus.mode;
+            LOG_DEVEL(LOG_LEVEL_DEBUG, "  got FocusOut mode %d",  notify_focus_mode);
+
+            if (notify_focus_mode == NotifyGrab)
+            {
+                struct rail_min_max_info info = {
+                    // FOR TEST ONLY!
+                    // following vaues are extracted for a notepad capture
+                    // TO BE REVIEWED!!
+                    lxevent->xfocus.window,
+                    1936, 1096, 0, 0, 136, 39, 3860, 1100 };
+
+                rail_send_min_max_info(&info);
+                // struct rail_local_move_size local = {
+                //     lxevent->xfocus.window, True, RAIL_WMSZ_MOVE, _x_, _y_ };
+
+                // rail_send_local_move_size(&local);
+                local_move_size_started = False;
+            }
             break;
 
         case ButtonPress:
